@@ -1,30 +1,23 @@
-#define UART0_BASE 0x101f1000
-
-#define UART_DR      0x00  // Data Register
-#define UART_FR      0x18  // Flag Register
-#define UART_FR_TXFF 0x20  // Transmit FIFO Full
-#define UART_FR_RXFE 0x10  // Receive FIFO Empty
-
-volatile unsigned int * const UART0 = (unsigned int *)UART0_BASE;
+#include "os.h"
 
 // Function to send a single character via UART
-void uart_putc(char c) {
+void uart_put_char(char c) {
     // Wait until there is space in the FIFO
     while (UART0[UART_FR / 4] & UART_FR_TXFF);
     UART0[UART_DR / 4] = c;
 }
 
 // Function to receive a single character via UART
-char uart_getc() {
+char uart_get_char() {
     // Wait until data is available
     while (UART0[UART_FR / 4] & UART_FR_RXFE);
     return (char)(UART0[UART_DR / 4] & 0xFF);
 }
 
 // Function to send a string via UART
-void uart_puts(const char *s) {
+void uart_put_string(const char *s) {
     while (*s) {
-        uart_putc(*s++);
+        uart_put_char(*s++);
     }
 }
 
@@ -33,12 +26,12 @@ void uart_gets_input(char *buffer, int max_length) {
     int i = 0;
     char c;
     while (i < max_length - 1) { // Leave space for null terminator
-        c = uart_getc();
+        c = uart_get_char();
         if (c == '\n' || c == '\r') {
-            uart_putc('\n'); // Echo newline
+            uart_put_char('\n'); // Echo newline
             break;
         }
-        uart_putc(c); // Echo character
+        uart_put_char(c); // Echo character
         buffer[i++] = c;
     }
     buffer[i] = '\0'; // Null terminate the string
@@ -99,37 +92,5 @@ void uart_itoa(int num, char *buffer) {
         buffer[end] = temp;
         start++;
         end--;
-    }
-}
-
-void main() {
-    char input1[16];
-    char input2[16];
-    char result_str[16];
-    int num1, num2, sum;
-
-    uart_puts("Program: Add Two Numbers\n");
-
-    while (1) {
-        // Prompt for first number
-        uart_puts("Enter first number: ");
-        uart_gets_input(input1, sizeof(input1));
-        num1 = uart_atoi(input1);
-
-        // Prompt for second number
-        uart_puts("Enter second number: ");
-        uart_gets_input(input2, sizeof(input2));
-        num2 = uart_atoi(input2);
-
-        // Calculate sum
-        sum = num1 + num2;
-
-        // Convert sum to string
-        uart_itoa(sum, result_str);
-
-        // Display the result
-        uart_puts("Sum: ");
-        uart_puts(result_str);
-        uart_putc('\n');
     }
 }
