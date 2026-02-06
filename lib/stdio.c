@@ -80,7 +80,7 @@ void READ(const char* format, ...) {
     
     while (*ptr && input_buffer[input_index]) {
         if (*ptr == '%' && *(ptr + 1)) {
-            ptr++; // Move past '%'
+            ptr++;
             
             // Skip whitespace in input
             while (input_buffer[input_index] == ' ' || input_buffer[input_index] == '\t') {
