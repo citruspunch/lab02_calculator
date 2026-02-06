@@ -4,9 +4,11 @@
 #include "os.h"
 
 // Function to print a formatted string analogous to printf
-void READ(const char* format, ...);
+// Supports: %s (string), %d (integer), %f (float), %c (character)
+void PRINT(const char* format, ...);
 
 // Function to read a formatted string analogous to scanf
-void PRINT(const char* format, ...);
+// Supports: %s (string), %d (integer), %f (float), %c (character)
+void READ(const char* format, ...);
 
 #endif // STDIO_H
