@@ -1,5 +1,8 @@
 #include "os.h"
 
+// Define UART0 pointer (only once in this file)
+volatile unsigned int * const UART0 = (unsigned int *)UART0_BASE;
+
 // Function to send a single character via UART
 void uart_put_char(char c) {
     // Wait until there is space in the FIFO
@@ -19,6 +22,11 @@ void uart_put_string(const char *s) {
     while (*s) {
         uart_put_char(*s++);
     }
+}
+
+// Wait for UART to finish transmitting all pending data
+void uart_flush(void) {
+    while (UART0[UART_FR / 4] & UART_FR_BUSY);
 }
 
 // Function to receive a line of input via UART
@@ -93,4 +101,99 @@ void uart_itoa(int num, char *buffer) {
         start++;
         end--;
     }
+}
+
+// Function to convert string to float
+float uart_atof(const char *s) {
+    float result = 0.0f;
+    float fraction = 0.0f;
+    int sign = 1;
+    int i = 0;
+    int decimal_places = 0;
+    int past_decimal = 0;
+
+    // Handle optional sign
+    if (s[i] == '-') {
+        sign = -1;
+        i++;
+    } else if (s[i] == '+') {
+        i++;
+    }
+
+    // Parse number
+    while (s[i]) {
+        if (s[i] >= '0' && s[i] <= '9') {
+            if (past_decimal) {
+                fraction = fraction * 10.0f + (s[i] - '0');
+                decimal_places++;
+            } else {
+                result = result * 10.0f + (s[i] - '0');
+            }
+        } else if (s[i] == '.' && !past_decimal) {
+            past_decimal = 1;
+        } else {
+            break; // Stop at invalid character
+        }
+        i++;
+    }
+
+    // Combine integer and fractional parts
+    if (decimal_places > 0) {
+        float divisor = 1.0f;
+        // Calculate divisor for fractional part (10^decimal_places)
+        for (int j = 0; j < decimal_places; j++) {
+            divisor *= 10.0f;
+        }
+        result += fraction / divisor;
+    }
+
+    return sign * result;
+}
+
+// Function to convert float to string
+void uart_ftoa(double num, char *buffer, int precision) {
+    int i = 0;
+    int int_part;
+    double fractional_part;
+
+    // Handle negative numbers
+    if (num < 0) {
+        buffer[i++] = '-';
+        num = -num;
+    }
+
+    // Extract integer part
+    int_part = (int)num;
+    fractional_part = num - int_part;
+
+    // Convert integer part
+    char temp[16];
+    int temp_i = 0;
+
+    if (int_part == 0) {
+        temp[temp_i++] = '0';
+    } else {
+        while (int_part > 0) {
+            temp[temp_i++] = '0' + (int_part % 10);
+            int_part /= 10;
+        }
+    }
+
+    // Reverse and copy integer part
+    while (temp_i > 0) {
+        buffer[i++] = temp[--temp_i];
+    }
+
+    // Add decimal point
+    buffer[i++] = '.';
+
+    // Convert fractional part
+    for (int j = 0; j < precision; j++) {
+        fractional_part *= 10.0;
+        int digit = (int)fractional_part;
+        buffer[i++] = '0' + digit;
+        fractional_part -= digit;
+    }
+
+    buffer[i] = '\0';
 }
