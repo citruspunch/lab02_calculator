@@ -1,6 +1,6 @@
 #include "os.h"
 
-// Define UART0 pointer (only once in this file)
+// UART0 pointer
 volatile unsigned int * const UART0 = (unsigned int *)UART0_BASE;
 
 // Function to send a single character via UART

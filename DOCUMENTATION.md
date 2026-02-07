@@ -1,82 +1,68 @@
 # Project Documentation
 
-**Layer Separation**
+**Separación por capas**
+- **OS level**: Ubicada en el folder `drivers/` que incluye `os.c`, `os.h`. Esta capa es la que proporciona acceso directo al hardware (via UART) y también contiene conversiones de tipo. Las funciones aquí leen/escriben los registros del UART e implementan conversiones entre cadenas y tipos numéricos. Los drivers exponen funciones simples y estables que las capas superiores llaman.
 
-- **Boot / Startup**: (startup assembly and linker) Responsible for CPU setup, stack and vector initialization and transferring control to `main`. This layer performs minimal early hardware setup and then jumps into the runtime provided by the drivers and libraries.
+- **Language Libraries**: Ubicada en `lib/` que incluye `stdio.c`, `stdio.h`, `string.c` , `string.h`. Esta capa implementa funciones de IO y utilidades de formato/parsing utilizando los drivers. Mantiene el código de la aplicación simple al exponer interfaces como `PRINT` y `READ`.
 
-- **Drivers (Hardware Abstraction)**: Located in `drivers/` (notably `os.c` / `os.h`). This layer provides direct access to the UART hardware and low-level conversions. Functions here read/write UART registers and implement safe, tiny conversions between strings and numeric types. Drivers should expose simple, stable primitives that higher layers call.
+- **User level**: Ubicada en `app/` (`main.c`). Usa las APIs de la librería `stdio` creadas en la capa `lib/` para implementar la lógica del programa. La aplicación no debe acceder directamente a los registros UART, utiliza las abstracciones de la biblioteca.
 
-- **Libraries (Platform C API)**: Located in `lib/` (`stdio.c` / `stdio.h`, `string.c` / `string.h`). This layer implements higher-level I/O and utility functions built on top of the drivers. It handles formatting, parsing of input/output, and small string utilities. It keeps application code simple by exposing `PRINT` and `READ` interfaces.
 
-- **Application**: Located in `app/` (`main.c`). Uses library APIs to implement program logic (prompts, arithmetic, loop). The application should not access UART registers directly — it uses the library/driver abstractions.
+**Diseño**
 
-**Design rationale**
+- El código de bajo nivel (los drivers) se mantiene separado del código de alto nivel (aplicación) a través de la capa de librería, lo que permite que la lógica de la aplicación sea independiente del hardware específico y facilita el mantenimiento y la portabilidad.
+- La capa de librería se encarga de formatear/parsing, lo que mantiene el código de la aplicación limpio y enfocado en la lógica de negocio, sin preocuparse por los detalles de cómo se envían o reciben los datos a través del UART.
 
-- Keep hardware-specific code (register accesses, busy-wait loops) in the drivers layer so that it is isolated and easy to replace if the UART base address or platform changes.
-- Keep formatting/parsing in the library layer so application code remains readable and compact.
 
 **Function descriptions by layer**
 
 Drivers (`drivers/os.h` / `drivers/os.c`)
 
 - `volatile unsigned int * const UART0`:
-  - Pointer mapping to the UART0 base address. All register accesses go through this pointer.
+  - Puntero constante a la dirección base del UART0. Todas las lecturas/escrituras a los registros del UART se hacen a través de este puntero. 
 
 - `void uart_put_char(char c)`:
-  - Waits until UART transmit FIFO has space, then writes the character to the data register. Used for sending single bytes.
+  - Envía un solo carácter a través del UART.
 
 - `char uart_get_char()`:
-  - Waits until the receive FIFO has data, then reads and returns one byte from the UART data register.
+  - Obtiene un byte del UART. Espera hasta que el FIFO de recepción tenga datos, luego lee y devuelve un byte del registro de datos del UART.
 
 - `void uart_put_string(const char *s)`:
-  - Iterates the given NUL-terminated string and calls `uart_put_char` for each character. Provides a convenient way to send C strings.
+  - Envia strings. Itera la cadena terminada en NUL dada y llama a `uart_put_char` para cada carácter. 
 
 - `void uart_gets_input(char *buffer, int max_length)`:
-  - Reads characters from UART (using `uart_get_char`) into `buffer` until newline or until `max_length-1` characters have been read. Echoes characters back and NUL-terminates the buffer. Intended for line-oriented input.
+  - Lee caracteres del UART usando `uart_get_char` en `buffer` hasta un salto de línea o hasta que se hayan leído `max_length-1` caracteres. Hace eco de los caracteres y termina el buffer con `\0`. 
 
 - `void uart_flush(void)`:
-  - Polls the UART flag register until the UART is no longer busy, ensuring all pending bytes have been transmitted before continuing.
+  - Consulta el registro de estado del UART hasta que el UART ya no esté ocupado, para que todos los bytes pendientes hayan sido transmitidos antes de continuar.
 
 - `int uart_atoi(const char *s)`:
-  - Minimal ASCII-to-integer converter. Handles optional leading `-` sign and consumes consecutive ASCII digits to build an `int`. Stops at the first non-digit.
+  - Convierte de ASCII a número entero. Maneja negativos (opcionales) al inicio y lee dígitos ASCII consecutivos para construir un `int`. Se detiene en el primer carácter que no es número.
 
 - `void uart_itoa(int num, char *buffer)`:
-  - Converts an `int` to a NUL-terminated ASCII string and writes it into `buffer`. Handles zero and negative numbers; reverses the generated digits into the final string.
+  - Convierte un `int` a una cadena ASCII terminada en `\0` y la escribe en `buffer`. Maneja cero y números negativos; invierte los dígitos generados en la cadena final.
 
 - `float uart_atof(const char *s)`:
-  - Minimal ASCII-to-float converter. Handles optional sign, integer and fractional parts separated by a `.`. Accumulates integer and fractional digits and returns a `float` approximation.
+  - Convierte ASCII a flotante. Maneja signo opcional, partes enteras y fraccionarias separadas por un `.`. Devuelve una aproximación en `float`.
 
 - `void uart_ftoa(double num, char *buffer, int precision)`:
-  - Converts a floating-point value to ASCII in `buffer` with the requested decimal `precision`. Handles negative numbers, integer extraction, and fractional digits by repeated multiplication. Produces no rounding beyond truncation of computed digits.
+  - Convierte un valor de punto flotante a ASCII en `buffer` con la precisión decimal solicitada. Maneja números negativos.
+  
 
-Libraries (`lib/stdio.h` / `lib/stdio.c`, `lib/string.*`)
+Librerias (`lib/stdio.h` / `lib/stdio.c`, `lib/string.*`)
 
 - `void PRINT(const char* format, ...)`:
-  - A tiny `printf`-like function. Walks the format string and, for supported conversion specifiers, extracts variadic arguments and emits them via the driver primitives. Supported specifiers: `%s` (string), `%d` (int), `%f` (float/double), `%c` (char), and literal `%%`.
-  - Implementation notes/limits: uses a local `buffer[32]` for numeric-to-string results; `%f` uses `uart_ftoa` with a hard-coded 2-decimal output. Does not support width/precision flags, exponential notation, or length modifiers.
+  - Una función parecida a `printf`. Recorre el string de formato y extrae los argumentos pasados y los emite usando las funciones provistas por el driver. Soporta: `%s` (string), `%d` (int), `%f` (float/double), `%c` (char) y `%%` literal.
 
 - `void READ(const char* format, ...)`:
-  - A tiny `scanf`-like routine. Flushes UART to ensure prompts are visible, reads a whole input line into an internal buffer with `uart_gets_input`, then parses that buffer according to the provided `format` string. Supported specifiers: `%s`, `%d`, `%f`, `%c`.
-  - Implementation notes/limits: tokenizes based on whitespace and simple character matching. Numeric parsing delegates to `uart_atoi` and `uart_atof`. Buffers are fixed-size (`input_buffer[64]`) — overly long input may be truncated.
+  - Es una función parecida a `scanf`. Vacía el UART para asegurar que los prompts sean visibles, lee una línea completa de entrada en un buffer interno con `uart_gets_input`, luego analiza ese buffer según el string de formato proporcionado. Soporta: `%s`, `%d`, `%f`, `%c`.
+  - Limitaciones: No puede leer cadenas que contengan espacios (usa el espacio como delimitador), no maneja errores de formato, y no soporta precisión dinámica.
 
 - `char *my_strncpy(char *dest, const char *src, size_t n)` (in `lib/string.c`):
-  - Minimal `strncpy` replacement: copies up to `n` characters from `src` into `dest`. If `src` is shorter than `n`, pads the remainder with NUL bytes. Returns `dest`.
+  - Reemplazo mínimo de `strncpy`, que copia hasta `n` caracteres de `src` a `dest`.
+
 
 Application (`app/main.c`)
 
 - `void main()`:
-  - Demonstrates use of the library and driver abstractions. It runs an infinite loop that:
-    - Prompts for two integers with `PRINT`/`READ`, computes their sum, and prints the result.
-    - Prompts for two floats with `PRINT`/`READ`, computes their sum, and prints the result.
-  - The application code never touches UART registers directly — it relies on `PRINT`/`READ` which call into the driver layer.
-
-**Notes, limitations, and suggested improvements**
-
-- Buffer sizes are small (e.g., `buffer[32]` in `PRINT`, `input_buffer[64]` in `READ`). Increase them if you expect longer strings or numeric output.
-- `PRINT` and `READ` implement a useful subset but lack full `printf`/`scanf` semantics (no width/precision flags, no error reporting). If needed, extend format parsing gradually.
-- Floating conversion in `uart_ftoa` truncates rather than rounds; adjust algorithm if correct rounding is required.
-- Consider adding non-blocking or interrupt-driven UART handling for better responsiveness and to avoid busy-wait polling in production.
-
----
-
-File: [app/main.c](app/main.c)
+  - Utiliza el script para testear la funcionalidad provisto por el Ing. Etson.
